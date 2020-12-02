@@ -1,0 +1,4 @@
+.env
+.cache
+web_client_secret.json
+token.pickle
