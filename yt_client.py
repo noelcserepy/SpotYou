@@ -11,7 +11,9 @@ class YTClient():
     def __init__(self):
         self.clients_secrets_file = os.getenv("CLIENT_SECRET_PATH")
         self.credentials = None
-        self.youtube = self._authorize()
+        self.youtube = None
+        
+        self._authorize()
 
 
     def _authorize(self):
@@ -41,10 +43,12 @@ class YTClient():
                     pickle.dump(credentials, f)
 
         youtube = build("youtube", "v3", credentials=self.credentials)
-        return youtube
+        self.youtube = youtube
 
 
     def list_channels(self):
+        self._authorize()
+
         request = self.youtube.channels().list(
             part="statistics",
             forUsername="TheHoinoel"
@@ -55,11 +59,13 @@ class YTClient():
         print(response)
 
 
-    def make_playlist(self):
+    def make_playlist(self, playlist_name):
+        self._authorize()
+
         request_body = {
             "snippet": {
                 "channelId": "UCeVKa9MfOuXxIkYanPukgig",
-                "title": "NewPlaylistYee",
+                "title": playlist_name,
                 "defaultLanguage": "en",
             },
             "status": {
@@ -74,14 +80,68 @@ class YTClient():
         )
         
         response = request.execute()
+        playlist_id = response["id"]
+
+        return playlist_id
+
+
+    def find_songs(self, title_list):
+        self._authorize()
+        id_list = []
         
-        print(response)
+        def batch_callback(request_id, response, exception):
+            if exception is not None:
+                print(exception)
+            else:
+                print(response)
+                id_list.append(response["items"][0]["id"]["videoId"])
+                print(f"Found")
 
 
-    def find_song(self, title):
-        pass
-        # return song_id
+        batch = self.youtube.new_batch_http_request(callback=batch_callback)
+
+        for title in title_list:
+            batch.add(self.youtube.search().list(
+                part="snippet",
+                maxResults=1,
+                q=title,
+                type="video"
+            ))
+
+        batch.execute()
+
+        print("id_list:", id_list)
+        return id_list
 
 
-    def add_song_to_playlist(self, song_id):
-        pass
+    def add_songs(self, song_id_list, playlist_id):
+        added_id_list = []
+
+        def batch_callback(request_id, response, exception):
+            if exception is not None:
+                print(exception)
+            else:
+                added_id_list.append(response["items"][0]["id"])
+                print(f"Added")
+
+
+        batch = self.youtube.new_batch_http_request(callback=batch_callback)
+
+        for song_id in song_id_list:
+            request_body = {
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {
+                        "videoId": song_id
+                    }
+                }
+            }
+
+            batch.add(self.youtube.playlistItems().insert(
+                part = "snippet",
+                body = request_body
+            ))
+
+        batch.execute()
+
+        return added_id_list
